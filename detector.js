@@ -30,7 +30,7 @@ function parseTasklist(text, verbose) {
 }
 // `ps -axo comm=` gives one command per line, on Mac as a full path.
 function parsePs(text) {
-  return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => ({ name: path.basename(l), title: '' }));
+  return text.split('\n').map(l => l.trim()).filter(Boolean).map(l => ({ name: path.basename(l), title: '', path: l }));
 }
 async function listProcesses() {
   if (process.platform === 'win32') return parseTasklist(await run('tasklist', ['/fo', 'csv', '/nh']), false);
@@ -70,15 +70,15 @@ async function spotifyNowPlaying(procs, db = DB) {
   const proc = procs.find(p => db.spotify.exe.some(e => sameProgram(p.name, e)));
   if (!proc) return null;
   if (process.platform === 'win32') {
-    for (const t of await titlesFor(proc.name)) { const r = parseSpotifyTitle(t); if (r) return r; }
+    for (const t of await titlesFor(proc.name)) { const r = parseSpotifyTitle(t); if (r) return { ...r, proc }; }
     return null;
   }
   if (process.platform === 'darwin') {
     const out = (await run('osascript', ['-e', 'tell application "Spotify" to if player state is playing then (artist of current track) & "\n" & (name of current track)'])).trim().split('\n');
-    return out.length >= 2 && out[1] ? { artist: out[0], song: out.slice(1).join(' ') } : null;
+    return out.length >= 2 && out[1] ? { artist: out[0], song: out.slice(1).join(' '), proc } : null;
   }
   const out = (await run('playerctl', ['-p', 'spotify', 'metadata', '--format', '{{artist}}\n{{title}}'])).trim().split('\n');   // needs playerctl installed
-  return out.length >= 2 && out[1] ? { artist: out[0], song: out.slice(1).join(' ') } : null;
+  return out.length >= 2 && out[1] ? { artist: out[0], song: out.slice(1).join(' '), proc } : null;
 }
 
 // ---- the detector: call scan() every few seconds; it returns the current activity (or null) ----
@@ -102,10 +102,10 @@ async function scan() {
   if (hits.length) {
     // If several are open, show the one that was started last.
     const best = hits.slice().sort((a, b) => firstSeen.get(b.game.name) - firstSeen.get(a.game.name))[0];
-    return { type: 'playing', name: best.game.name, details: '', state: '', image: null, startedAt: firstSeen.get(best.game.name), source: 'desktop' };
+    return { type: 'playing', name: best.game.name, details: '', state: '', image: null, startedAt: firstSeen.get(best.game.name), source: 'desktop', program: { name: best.proc.name, path: best.proc.path || null } };
   }
   const sp = await spotifyNowPlaying(procs);
-  if (sp) return { type: 'listening', name: sp.song, details: sp.artist, state: 'on Spotify', image: null, startedAt: null, source: 'desktop' };
+  if (sp) return { type: 'listening', name: sp.song, details: sp.artist, state: 'on Spotify', image: null, startedAt: null, source: 'desktop', program: { name: sp.proc.name, path: sp.proc.path || null } };
   return null;
 }
 module.exports = { scan, parseTasklist, parsePs, findGames, parseSpotifyTitle, sameProgram, norm };

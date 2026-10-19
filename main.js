@@ -2,6 +2,7 @@
 // that powers Activity Status. The website does all the real work; this app only adds what a browser tab can't do.
 'use strict';
 const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, dialog } = require('electron');
+const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const detector = require('./detector');
@@ -111,10 +112,44 @@ function sendActivity(a) {
   lastSent = s;
   if (win && !win.isDestroyed()) win.webContents.send('rpc:activity', a || null);
 }
+// The picture shown next to the activity is the program's own icon, read from its .exe (Windows) or .app (Mac). It's shrunk to a
+// small PNG so it's light to share. Looked up once per program, then remembered. Linux just shows Frixion's built-in picture.
+const iconCache = new Map();   // program name -> data URL, or null when there isn't one
+function windowsExePath(name) {
+  return new Promise(resolve => {
+    const n = String(name).replace(/\.exe$/i, '');
+    if (!/^[\w .\-()]+$/.test(n)) return resolve(null);
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Name '${n.replace(/'/g, "''")}' -ErrorAction SilentlyContinue | Select-Object -First 1).Path`],
+      { timeout: 10000, windowsHide: true }, (err, out) => resolve(err ? null : (String(out).trim() || null)));
+  });
+}
+async function iconFor(program) {
+  if (!program || !program.name) return null;
+  const key = program.name.toLowerCase();
+  if (iconCache.has(key)) return iconCache.get(key);
+  let url = null;
+  try {
+    let target = null;
+    if (process.platform === 'win32') target = await windowsExePath(program.name);
+    else if (process.platform === 'darwin' && program.path) { const mm = /^(.*?\.app)\//.exec(program.path); target = mm ? mm[1] : null; }
+    if (target) {
+      let img = await app.getFileIcon(target, { size: 'large' });
+      const s = img.getSize();
+      if (s.width > 64) img = img.resize({ width: 64, height: 64, quality: 'best' });
+      if (!img.isEmpty()) { const png = img.toPNG(); if (png.length < 18000) url = 'data:image/png;base64,' + png.toString('base64'); }
+    }
+  } catch (e) { url = null; }
+  iconCache.set(key, url);
+  return url;
+}
 async function scanOnce() {
   if (scanning) return;
   scanning = true;
-  try { sendActivity(detectionOn ? await detector.scan() : null); }
+  try {
+    let a = detectionOn ? await detector.scan() : null;
+    if (a) { const { program, ...rest } = a; a = rest; a.image = await iconFor(program); }
+    sendActivity(a);
+  }
   catch (e) { /* a failed scan just means "nothing found" this time */ }
   finally { scanning = false; }
 }
