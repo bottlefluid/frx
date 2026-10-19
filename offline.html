@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frixion</title>
+<style>
+  html,body{height:100%;margin:0;background:#1e1f22;color:#f2f3f5;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-app-region:drag}
+  main{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px}
+  .logo{width:64px;height:64px;border-radius:50%;background:#5865f2;display:flex;align-items:center;justify-content:center}
+  h1{margin:6px 0 0;font-size:22px} p{margin:0;color:#b5bac1;max-width:420px;line-height:1.5}
+  button{-webkit-app-region:no-drag;margin-top:8px;border:0;border-radius:8px;padding:10px 22px;font-size:15px;font-weight:600;background:#5865f2;color:#fff;cursor:pointer}
+  button:hover{background:#4752c4}
+</style></head><body><main>
+  <div class="logo"><svg width="34" height="34" viewBox="0 0 24 24"><path d="M4 5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9.2L7 20.5V17H4A1.5 1.5 0 0 1 2.5 15.5v-9A1.5 1.5 0 0 1 4 5z" fill="#fff"/></svg></div>
+  <h1>Can't reach Frixion</h1>
+  <p id="why">Check your internet connection, then try again.</p>
+  <button onclick="location.href=new URLSearchParams(location.search).get('retry')||'about:blank'">Try again</button>
+</main></body></html>
