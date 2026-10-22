@@ -1,5 +1,6 @@
 // The only thing the website can see of the desktop app: window.frixionDesktop. It can move/close the window, hear about detected
-// activity, and tell the app whether detection is allowed. It can't run commands, read files or touch the system in any other way.
+// activity, idle and window visibility, and tell the app whether detection is allowed. It can't run commands, read files or touch
+// the system in any other way.
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -22,4 +23,14 @@ contextBridge.exposeInMainWorld('frixionDesktop', {
   },
   // Frixion tells the app whether detection should run (the person's "Share my activity" and "Detect games" settings)
   setDetection: on => ipcRenderer.send('rpc:setEnabled', !!on),
+  // cb(true|false) when the computer goes idle (10 minutes without keyboard or mouse, or locked) or comes back (and once right away)
+  onIdleChange: cb => {
+    ipcRenderer.on('presence:idle', (_e, v) => cb(!!v));
+    ipcRenderer.send('presence:askIdle');
+  },
+  // cb(true|false) when the window is shown or hidden in the tray / minimized (and once right away)
+  onWindowVisibility: cb => {
+    ipcRenderer.on('win:visible', (_e, v) => cb(!!v));
+    ipcRenderer.send('win:askVisible');
+  },
 });

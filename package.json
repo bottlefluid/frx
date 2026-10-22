@@ -1,7 +1,7 @@
 {
   "name": "frixion-desktop",
   "productName": "Frixion",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "Frixion for computers: the app window, tray icon and automatic game detection.",
   "main": "main.js",
   "author": "Frixion",

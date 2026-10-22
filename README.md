@@ -50,9 +50,16 @@ Buying a code-signing certificate (Windows) / Apple Developer account (Mac) remo
 - Only program names (and the Spotify window title) are read. Nothing is saved or uploaded; the one thing shared is the activity itself,
   shown to friends, and only while "Share my activity" is on in Frixion's Settings.
 
+## Online status
+While the app is running, even only in the tray, friends on the website and in the app see you as **Online**. You show as **Idle**
+after 10 minutes without touching the keyboard or mouse, or while the computer is locked. (Needs app version 2.1 or newer.)
+
 ## Files
 - `main.js`: the window, tray icon, start-with-computer, game scanning
 - `preload.js`: the small, safe bridge the website uses (`window.frixionDesktop`)
 - `detector.js` + `games.json`: finds games and the Spotify song
 - `offline.html`: shown when there's no internet
+- `config.json`: the site address the app opens
+- `test/detector.test.js`: `npm test`
 - `build/`: app and tray icons
+- `.github/workflows/build.yml`: builds the installers on GitHub

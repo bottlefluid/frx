@@ -1,7 +1,7 @@
 // Frixion for computers. A window around the Frixion website, a tray icon, start-with-computer, and the game detector
 // that powers Activity Status. The website does all the real work; this app only adds what a browser tab can't do.
 'use strict';
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, dialog, powerMonitor } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -10,6 +10,7 @@ const config = require('./config.json');
 
 const SITE = new URL(config.url);
 const SCAN_EVERY_MS = 12000;
+const IDLE_AFTER_SECONDS = 10 * 60;   // like Discord: idle after 10 minutes without keyboard or mouse anywhere on the computer
 
 // Sound from the Shop music should start without a click, like it does when you're already using the page.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -34,7 +35,10 @@ function createWindow(startHidden) {
     width: 1280, height: 820, minWidth: 940, minHeight: 560,
     show: false, frame: false, backgroundColor: '#1e1f22', title: 'Frixion',
     icon: iconPath('icon.png'),
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true },
+    // backgroundThrottling off: in the tray the window is hidden, and Chromium would otherwise slow the page's timers
+    // until its connection to Frixion dropped, so friends saw this person go offline. The page pauses its own
+    // animations while the window is hidden (see 'win:visible' below).
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true, backgroundThrottling: false },
   });
   win.once('ready-to-show', () => { if (!startHidden) win.show(); });
   win.loadURL(config.url);
@@ -42,15 +46,18 @@ function createWindow(startHidden) {
     if (!isMainFrame || code === -3) return;       // -3 is a cancelled load, not an error
     win.loadFile(path.join(__dirname, 'offline.html'), { search: 'retry=' + encodeURIComponent(config.url) });
   });
-  // Links to other sites open in the person's normal browser, never inside the app.
+  // Links to other sites open in the person's normal browser, never inside the app. The page itself may only go to the
+  // Frixion site (the offline page is opened by the app, which doesn't count as the page navigating).
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => {
-    if (isSiteUrl(url) || url.startsWith('file://')) return;
+    if (isSiteUrl(url)) return;
     e.preventDefault();
     if (/^https?:/i.test(url)) shell.openExternal(url);
   });
   win.on('maximize', () => win.webContents.send('win:maximized', true));
   win.on('unmaximize', () => win.webContents.send('win:maximized', false));
+  ['show', 'hide', 'minimize', 'restore'].forEach(ev => win.on(ev, sendVisibility));
+  win.webContents.on('did-finish-load', () => { sendVisibility(); lastIdle = null; checkIdle(); });
   win.on('close', (e) => {
     if (quitting || !prefs.closeToTray || !tray) return;
     e.preventDefault(); win.hide();                 // keep running in the tray so the activity status keeps working
@@ -58,6 +65,27 @@ function createWindow(startHidden) {
   win.on('closed', () => { win = null; });
 }
 function showWindow() { if (!win) createWindow(false); else { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } }
+// The page can't tell on its own that the window is in the tray (see backgroundThrottling above).
+function sendVisibility() {
+  if (win && !win.isDestroyed()) win.webContents.send('win:visible', win.isVisible() && !win.isMinimized());
+}
+
+// ---- Idle: friends see "Idle" after 10 minutes away from the computer or when it is locked, not when the window is hidden ----
+let lastIdle = null, idleTimer = null;
+function checkIdle() {
+  let idle = false;
+  try { idle = powerMonitor.getSystemIdleState(IDLE_AFTER_SECONDS) !== 'active'; } catch (e) {}
+  if (idle === lastIdle) return;
+  lastIdle = idle;
+  if (win && !win.isDestroyed()) win.webContents.send('presence:idle', idle);
+}
+function startIdleWatch() {
+  if (idleTimer) return;
+  idleTimer = setInterval(checkIdle, 15000);
+  powerMonitor.on('lock-screen', checkIdle);
+  powerMonitor.on('unlock-screen', checkIdle);
+  powerMonitor.on('resume', checkIdle);
+}
 
 function buildTray() {
   try {
@@ -69,7 +97,8 @@ function buildTray() {
     { label: 'Open Frixion', click: showWindow },
     ...(updateReady ? [{ label: 'Restart to update to ' + updateReady, click: installUpdate }] : []),
     { type: 'separator' },
-    { label: 'Start with my computer', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: i => app.setLoginItemSettings({ openAtLogin: i.checked, args: i.checked ? ['--hidden'] : [] }) },
+    // args is how Windows starts it in the tray; openAsHidden is the Mac way.
+    { label: 'Start with my computer', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: i => app.setLoginItemSettings({ openAtLogin: i.checked, openAsHidden: i.checked, args: i.checked ? ['--hidden'] : [] }) },
     { label: 'Keep running in the tray when I close the window', type: 'checkbox', checked: prefs.closeToTray, click: i => { prefs.closeToTray = i.checked; savePrefs(); } },
     { type: 'separator' },
     { label: 'Quit Frixion', click: () => { quitting = true; app.quit(); } },
@@ -91,7 +120,11 @@ function setupUpdates() {
   autoUpdater.on('error', () => {});               // offline or no release yet: try again next time
   autoUpdater.on('update-downloaded', (info) => {
     updateReady = info.version;
-    if (!win || (!win.isVisible() && !win.isMinimized())) { installUpdate(); return; }   // living in the tray: nobody is looking, so just update
+    if (!win || (!win.isVisible() && !win.isMinimized())) {
+      // Living in the tray: nobody is looking, so just update, and come back in the tray rather than popping up.
+      prefs.startHiddenOnce = true; savePrefs();
+      installUpdate(); return;
+    }
     if (win.isMinimized()) return;                  // don't interrupt; it's in the tray menu and installs when Frixion is closed
     dialog.showMessageBox(win, {
       type: 'info', title: 'Frixion update', message: 'A new version of Frixion is ready.',
@@ -163,6 +196,8 @@ ipcMain.on('win:toggleMaximize', e => { if (fromSite(e)) (win.isMaximized() ? wi
 ipcMain.on('win:close', e => { if (fromSite(e)) win.close(); });
 ipcMain.on('win:askMaximized', e => { if (fromSite(e)) win.webContents.send('win:maximized', win.isMaximized()); });
 ipcMain.on('rpc:ready', e => { if (fromSite(e)) { lastSent = 'null'; scanOnce(); } });
+ipcMain.on('presence:askIdle', e => { if (fromSite(e)) { lastIdle = null; checkIdle(); } });
+ipcMain.on('win:askVisible', e => { if (fromSite(e)) sendVisibility(); });
 ipcMain.on('rpc:setEnabled', (e, on) => {
   if (!fromSite(e)) return;
   const was = detectionOn; detectionOn = !!on;
@@ -178,9 +213,11 @@ app.whenReady().then(() => {
   loadPrefs();
   // Only the permissions Frixion actually uses.
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(['notifications', 'fullscreen', 'clipboard-sanitized-write', 'media'].includes(permission) && isSiteUrl(wc.getURL())));
-  const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden;
+  const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden || !!prefs.startHiddenOnce;
+  if (prefs.startHiddenOnce) { delete prefs.startHiddenOnce; savePrefs(); }
   buildTray();
   createWindow(hidden && !!tray);
   startScanning();
+  startIdleWatch();
   setupUpdates();
 });
