@@ -82,8 +82,9 @@ async function spotifyNowPlaying(procs, db = DB) {
 }
 
 // ---- the detector: call scan() every few seconds; it returns the current activity (or null) ----
+// scan({ spotify: false }) only looks for games.
 const firstSeen = new Map();       // game name -> when it was first noticed running
-async function scan() {
+async function scan(opts = {}) {
   const procs = await listProcesses();
   if (!procs.length) return null;
   let hits = findGames(procs);
@@ -104,6 +105,7 @@ async function scan() {
     const best = hits.slice().sort((a, b) => firstSeen.get(b.game.name) - firstSeen.get(a.game.name))[0];
     return { type: 'playing', name: best.game.name, details: '', state: '', image: null, startedAt: firstSeen.get(best.game.name), source: 'desktop', program: { name: best.proc.name, path: best.proc.path || null } };
   }
+  if (opts.spotify === false) return null;
   const sp = await spotifyNowPlaying(procs);
   if (sp) return { type: 'listening', name: sp.song, details: sp.artist, state: 'on Spotify', image: null, startedAt: null, source: 'desktop', program: { name: sp.proc.name, path: sp.proc.path || null } };
   return null;

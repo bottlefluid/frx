@@ -54,6 +54,12 @@ Buying a code-signing certificate (Windows) / Apple Developer account (Mac) remo
 While the app is running, even only in the tray, friends on the website and in the app see you as **Online**. You show as **Idle**
 after 10 minutes without touching the keyboard or mouse, or while the computer is locked. (Needs app version 2.1 or newer.)
 
+## Overlay over games
+The overlay shortcut (Settings → Keyboard on the website, Shift + ` by default) opens Frixion's overlay on top of any program,
+for example Minecraft or Roblox. A shortcut without Ctrl or Alt (like the default, which types ~) is only taken over while a
+game from `games.json` is running, so it keeps typing normally everywhere else. Games in true fullscreen may minimize when the
+overlay opens; windowed or borderless fullscreen works best. (Needs app version 2.2 or newer.)
+
 ## Files
 - `main.js`: the window, tray icon, start-with-computer, game scanning
 - `preload.js`: the small, safe bridge the website uses (`window.frixionDesktop`)

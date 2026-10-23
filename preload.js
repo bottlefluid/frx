@@ -33,4 +33,12 @@ contextBridge.exposeInMainWorld('frixionDesktop', {
     ipcRenderer.on('win:visible', (_e, v) => cb(!!v));
     ipcRenderer.send('win:askVisible');
   },
+  // The overlay shortcut, in the website's format ({ code, shift, ctrl, alt, meta }); null pauses it. The app registers it
+  // with the computer so it works on top of other programs.
+  setOverlayShortcut: b => ipcRenderer.send('overlay:setShortcut', b ? { code: String(b.code), shift: !!b.shift, ctrl: !!b.ctrl, alt: !!b.alt, meta: !!b.meta } : null),
+  // cb('show' | 'hide' | 'toggle'): the app asks the page to open or close the overlay
+  onOverlay: cb => ipcRenderer.on('overlay', (_e, what) => cb(String(what))),
+  // Only used by the overlay window: it has loaded (and whether someone is signed in), or it wants to go away
+  overlayReady: signedIn => ipcRenderer.send('overlay:ready', !!signedIn),
+  hideOverlay: () => ipcRenderer.send('overlay:hide'),
 });
