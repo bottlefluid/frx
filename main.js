@@ -1,7 +1,7 @@
 // Frixion for computers. A window around the Frixion website, a tray icon, start-with-computer, and the game detector
 // that powers Activity Status. The website does all the real work; this app only adds what a browser tab can't do.
 'use strict';
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, dialog, powerMonitor, globalShortcut, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, dialog, powerMonitor, globalShortcut, screen, Notification, net } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -16,6 +16,8 @@ const IDLE_AFTER_SECONDS = 10 * 60;   // like Discord: idle after 10 minutes wit
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+// Windows only shows an app's notifications (with its name and icon) when they carry the app's id.
+if (process.platform === 'win32') app.setAppUserModelId('com.frixion.desktop');
 
 let win = null, tray = null, quitting = false;
 let updateReady = null;   // the version number of an update that is downloaded and waiting for a restart
@@ -154,6 +156,10 @@ function showOverlay() {
   if (!overlayReady) return;                                    // opens as soon as the page has loaded (see 'overlay:ready')
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());   // the screen the game is on
   overlay.setBounds(d.bounds);
+  // Opened right after a notification popped up over the game: open that chat, so it can be answered straight away.
+  if (lastGameNote && lastGameNote.open && Date.now() - lastGameNote.at < 60000) overlay.webContents.send('notify:open', lastGameNote.open);
+  lastGameNote = null;
+  clearPopup();
   overlay.show();
   overlay.focus();
   overlay.webContents.send('overlay', 'show');
@@ -163,6 +169,76 @@ function hideOverlay() {
   if (!overlay || !overlay.isVisible()) return;
   overlay.webContents.send('overlay', 'hide');
   overlay.hide();
+}
+
+// ---- Notifications: over the game while one is running (like Discord's overlay), otherwise Windows notifications ----
+// While a game is in front, Windows usually holds its own notifications back, so the app draws them itself: a small
+// see-through window in the bottom-right corner that never takes focus and lets every click through to the game.
+// Games in true (exclusive) fullscreen may hide it; windowed and borderless fullscreen games show it.
+let popup = null, popupCards = [], popupSeq = 0, lastGameNote = null;
+const POPUP_W = 360, POPUP_CARD_H = 112, POPUP_MAX = 3, POPUP_MS = 6000;
+const liveNotes = new Set();                                    // Windows notifications stay clickable only while referenced
+function overlayHint() {
+  const a = acceleratorFor(overlayBind);
+  return a && !overlayPaused ? `Press ${a.replace(/\+/g, ' + ')} to answer` : '';
+}
+function ensurePopup() {
+  if (popup && !popup.isDestroyed()) return;
+  popup = new BrowserWindow({
+    width: POPUP_W, height: POPUP_CARD_H, show: false, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    skipTaskbar: true, resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    focusable: false, alwaysOnTop: true, title: 'Frixion notification',
+    webPreferences: { preload: path.join(__dirname, 'notify-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  popup.setAlwaysOnTop(true, 'screen-saver');
+  popup.setIgnoreMouseEvents(true);
+  if (process.platform === 'darwin') popup.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  popup.webContents.on('will-navigate', e => e.preventDefault());
+  popup.webContents.on('did-finish-load', layoutPopup);
+  popup.on('closed', () => { popup = null; });
+  popup.loadFile(path.join(__dirname, 'notify.html'));
+}
+function layoutPopup() {
+  if (!popup || popup.isDestroyed() || popup.webContents.isLoading()) return;
+  if (!popupCards.length) { popup.hide(); popup.webContents.send('popup:cards', []); return; }
+  const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds;   // the screen the game is on
+  const h = popupCards.length * POPUP_CARD_H;
+  popup.setBounds({ x: d.x + d.width - POPUP_W - 16, y: d.y + d.height - h - 64, width: POPUP_W, height: h });
+  popup.webContents.send('popup:cards', popupCards);
+  if (!popup.isVisible()) popup.showInactive();                 // never takes the game's focus
+}
+function clearPopup() { popupCards = []; layoutPopup(); }
+function showGamePopup(n) {
+  ensurePopup();
+  const card = { id: ++popupSeq, title: n.title, body: n.body, icon: n.icon, hint: overlayHint() };
+  popupCards = [...popupCards, card].slice(-POPUP_MAX);
+  lastGameNote = { open: n.open, at: Date.now() };
+  layoutPopup();
+  setTimeout(() => { popupCards = popupCards.filter(c => c !== card); layoutPopup(); }, POPUP_MS);
+}
+// The sender's picture for a Windows notification: a data: picture, or a https: one fetched quickly; else Frixion's icon.
+async function noteIcon(url) {
+  let img = null;
+  try {
+    if (/^data:image\/(png|jpe?g|gif|webp);/i.test(url)) img = nativeImage.createFromDataURL(url);
+    else if (/^https:\/\//i.test(url)) {
+      const r = await net.fetch(url, { signal: AbortSignal.timeout(3000) });
+      const buf = r.ok ? Buffer.from(await r.arrayBuffer()) : null;
+      if (buf && buf.length < 3e6) img = nativeImage.createFromBuffer(buf);
+    }
+  } catch (e) { img = null; }
+  return img && !img.isEmpty() ? img : nativeImage.createFromPath(iconPath('icon.png'));
+}
+async function showWindowsNotification(n) {
+  if (!Notification.isSupported()) return;
+  const note = new Notification({ title: n.title, body: n.body, icon: await noteIcon(n.icon), silent: true });   // the page plays Frixion's own sound
+  liveNotes.add(note);
+  const done = () => liveNotes.delete(note);
+  note.on('click', () => { done(); showWindow(); if (n.open && win && !win.isDestroyed()) win.webContents.send('notify:open', n.open); });
+  note.on('close', done);
+  note.show();
+  setTimeout(done, 5 * 60 * 1000);
 }
 
 function buildTray() {
@@ -257,10 +333,9 @@ async function scanOnce() {
   if (scanning) return;
   scanning = true;
   try {
-    // The overlay shortcut needs to know when a game is running, so games are looked for even while sharing is off
-    // (then nothing is sent anywhere; Spotify is only checked when sharing is on).
-    const needed = detectionOn || typesSomething(overlayBind);
-    let a = needed ? await detector.scan({ spotify: detectionOn }) : null;
+    // The overlay shortcut and notifications over games need to know when a game is running, so games are looked for
+    // even while sharing is off (then nothing is sent anywhere; Spotify is only checked when sharing is on).
+    let a = await detector.scan({ spotify: detectionOn });
     gameRunning = !!(a && a.type === 'playing');
     updateOverlayShortcut();
     if (!detectionOn) a = null;
@@ -296,6 +371,19 @@ ipcMain.on('overlay:ready', (e, signedIn) => {
   if (overlayWanted) showOverlay();
 });
 ipcMain.on('overlay:hide', e => { if (fromOverlay(e)) hideOverlay(); });
+// A notification from the website (it only asks while you aren't looking at Frixion).
+ipcMain.on('notify:show', (e, n) => {
+  if (!fromSite(e) || !n || typeof n !== 'object') return;
+  if ((win && win.isVisible() && win.isFocused()) || (overlay && overlay.isVisible())) return;   // already looking at Frixion
+  const s = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const o = n.open && typeof n.open === 'object' ? n.open : null;
+  const note = {
+    title: s(n.title, 100) || 'Frixion', body: s(n.body, 180), icon: typeof n.icon === 'string' && n.icon.length < 400000 ? n.icon : '',
+    open: o ? { type: s(o.type, 10), id: s(o.id, 200), other: s(o.other, 60), sid: s(o.sid, 200), cid: s(o.cid, 200), tid: s(o.tid, 200) } : null,
+  };
+  if (n.inGame !== false && gameRunning) showGamePopup(note);
+  else showWindowsNotification(note);
+});
 // The shortcut from Settings, in the website's format. null pauses it while Settings waits for a new one.
 ipcMain.on('overlay:setShortcut', (e, b) => {
   if (!fromSite(e) && !fromOverlay(e)) return;

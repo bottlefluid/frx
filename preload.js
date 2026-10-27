@@ -41,4 +41,15 @@ contextBridge.exposeInMainWorld('frixionDesktop', {
   // Only used by the overlay window: it has loaded (and whether someone is signed in), or it wants to go away
   overlayReady: signedIn => ipcRenderer.send('overlay:ready', !!signedIn),
   hideOverlay: () => ipcRenderer.send('overlay:hide'),
+  // A notification ({ title, body, icon, open, inGame }): the app shows it over the game you're playing, or as a Windows
+  // notification. open says which chat it's about.
+  notify: n => {
+    if (!n || typeof n !== 'object') return;
+    const o = n.open && typeof n.open === 'object' ? n.open : null;
+    const s = v => (typeof v === 'string' ? v : null);
+    ipcRenderer.send('notify:show', { title: String(n.title || ''), body: String(n.body || ''), icon: String(n.icon || ''), inGame: n.inGame !== false,
+      open: o ? { type: s(o.type), id: s(o.id), other: s(o.other), sid: s(o.sid), cid: s(o.cid), tid: s(o.tid) } : null });
+  },
+  // cb(open) when a notification is clicked, or when the overlay opens right after one popped up over a game
+  onNotifyOpen: cb => ipcRenderer.on('notify:open', (_e, o) => cb(o || null)),
 });
