@@ -24,9 +24,13 @@ let updateReady = null;   // the version number of an update that is downloaded 
 let detectionOn = true, lastSent = 'null', scanTimer = null, scanning = false;
 
 // Small saved preferences (close to tray). Kept next to the app's other data.
+// Closing the window closes Frixion. Keeping it running in the tray is an opt-in in the tray menu.
 const prefsFile = () => path.join(app.getPath('userData'), 'prefs.json');
-let prefs = { closeToTray: true };
-function loadPrefs() { try { prefs = { ...prefs, ...JSON.parse(fs.readFileSync(prefsFile(), 'utf8')) }; } catch (e) {} }
+let prefs = { closeToTray: false, v: 2 };
+function loadPrefs() {
+  try { prefs = { ...prefs, ...JSON.parse(fs.readFileSync(prefsFile(), 'utf8')) }; } catch (e) {}
+  if ((prefs.v || 1) < 2) { prefs.closeToTray = false; prefs.v = 2; savePrefs(); }   // older versions saved 'true' without asking
+}
 function savePrefs() { try { fs.writeFileSync(prefsFile(), JSON.stringify(prefs)); } catch (e) {} }
 
 const isSiteUrl = u => { try { return new URL(u).origin === SITE.origin; } catch (e) { return false; } };
@@ -54,10 +58,12 @@ function createWindow(startHidden) {
   ['show', 'hide', 'minimize', 'restore'].forEach(ev => win.on(ev, sendVisibility));
   win.webContents.on('did-finish-load', () => { sendVisibility(); lastIdle = null; checkIdle(); });
   win.on('close', (e) => {
-    if (quitting || !prefs.closeToTray || !tray) return;
-    e.preventDefault(); win.hide();                 // keep running in the tray so the activity status keeps working
+    if (quitting) return;
+    if (prefs.closeToTray && tray) { e.preventDefault(); win.hide(); return; }   // they chose to keep it running in the tray
+    quitting = true;                                // otherwise closing the window closes the app
   });
-  win.on('closed', () => { win = null; });
+  // the overlay and popup windows stay open in the background, so quit here rather than waiting for every window to close
+  win.on('closed', () => { win = null; if (quitting) app.quit(); });
 }
 function showWindow() { if (!win) createWindow(false); else { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } }
 // Links to other sites open in the person's normal browser, never inside the app. A page may only go to the Frixion
