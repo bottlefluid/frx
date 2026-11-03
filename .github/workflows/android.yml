@@ -41,13 +41,18 @@ jobs:
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          # only whether they were saved as variables (the Variables tab) by mistake, never their values
+          AS_VARIABLES: ${{ vars.ANDROID_KEYSTORE != '' && 'ANDROID_KEYSTORE ' || '' }}${{ vars.ANDROID_KEYSTORE_PASSWORD != '' && 'ANDROID_KEYSTORE_PASSWORD' || '' }}
         run: |
           if [ -n "$KEYSTORE" ] && [ -n "$PASSWORD" ]; then
             echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/frixion.jks"
             echo "FRIXION_KEYSTORE=$RUNNER_TEMP/frixion.jks" >> "$GITHUB_ENV"
             echo "FRIXION_KEYSTORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
           else
-            echo "::warning::The ANDROID_KEYSTORE and ANDROID_KEYSTORE_PASSWORD secrets aren't set, so this is a test build with a throwaway key."
+            missing=""
+            [ -n "$KEYSTORE" ] || missing="$missing ANDROID_KEYSTORE"
+            [ -n "$PASSWORD" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
+            echo "::warning::Missing repository secrets:$missing${AS_VARIABLES:+ (saved as variables instead: $AS_VARIABLES)}. This is a test build with a throwaway key."
           fi
       - name: Build the APK
         working-directory: android
