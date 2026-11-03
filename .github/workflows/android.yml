@@ -53,7 +53,8 @@ jobs:
       # What went wrong, as annotations on the run (readable without opening the log)
       - name: Show the build errors
         if: failure()
-        run: grep -E "error:|e: |What went wrong|Could not|FAILED|Exception:|not found" "$RUNNER_TEMP/gradle.log" | head -30 | while IFS= read -r line; do echo "::error::$line"; done
+        run: |
+          grep -E "error:|e: |What went wrong|Could not|FAILED|Exception:|not found" "$RUNNER_TEMP/gradle.log" | head -30 | while IFS= read -r line; do echo "::error::$line"; done
       - name: Name it
         run: |
           apk=$(ls android/app/build/outputs/apk/*/*.apk | head -1)
