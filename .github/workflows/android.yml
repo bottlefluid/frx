@@ -5,11 +5,13 @@
 # signed with the Frixion key from two repository secrets: ANDROID_KEYSTORE (the key file, as base64) and
 # ANDROID_KEYSTORE_PASSWORD. Keep that key safe and never change it. Without them, a test build gets a throwaway key
 # and nothing is added to a release.
+# To make only the APK again for a release that's already out (say the key wasn't set yet), push a tag like
+# android-v2.4.0: its APK is added to release v2.4.0, and the computer installers aren't built again.
 name: Build Android app
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'android-v*']
     branches: [main]
     paths: ['android/**', '.github/workflows/android.yml']
   workflow_dispatch:
@@ -29,9 +31,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Use the tag as the app version (v2.4.0 becomes 2.4.0)
+      - name: Use the tag as the app version (v2.4.0 or android-v2.4.0 becomes 2.4.0, for release v2.4.0)
         if: startsWith(github.ref, 'refs/tags/')
-        run: echo "FRIXION_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        run: |
+          tag="${GITHUB_REF_NAME#android-}"
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "FRIXION_VERSION=${tag#v}" >> "$GITHUB_ENV"
       - name: The Frixion key
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
@@ -72,6 +77,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for i in $(seq 1 40); do gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && break; sleep 30; done
-          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "$FRIXION_VERSION" --notes ""
-          gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+          for i in $(seq 1 40); do gh release view "$RELEASE_TAG" > /dev/null 2>&1 && break; sleep 30; done
+          gh release view "$RELEASE_TAG" > /dev/null 2>&1 || gh release create "$RELEASE_TAG" --draft --title "$FRIXION_VERSION" --notes ""
+          gh release upload "$RELEASE_TAG" "$APK" --clobber
