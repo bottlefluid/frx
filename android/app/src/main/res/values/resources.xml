@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Frixion</string>
+    <string name="channel_messages">Messages</string>
+
+    <color name="frixion_bg">#1E1F22</color>
+    <color name="frixion_blurple">#5865F2</color>
+
+    <style name="Frixion" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/frixion_bg</item>
+        <item name="android:statusBarColor">@color/frixion_bg</item>
+        <item name="android:navigationBarColor">@color/frixion_bg</item>
+        <item name="android:colorAccent">@color/frixion_blurple</item>
+    </style>
+</resources>

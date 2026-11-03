@@ -1,0 +1,76 @@
+# Builds the Frixion app for Android phones (the android folder) as an APK.
+# On a release tag like v2.4.0 the APK is added to that release, next to the computer installers, and the website offers
+# it to Android phones. A push that changes the android folder only makes a test build (a download on the workflow run).
+# Signing: Android only installs a new version over the old one when both are signed with the same key, so the APK is
+# signed with the Frixion key from two repository secrets: ANDROID_KEYSTORE (the key file, as base64) and
+# ANDROID_KEYSTORE_PASSWORD. Keep that key safe and never change it. Without them, a test build gets a throwaway key
+# and nothing is added to a release.
+name: Build Android app
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Use the tag as the app version (v2.4.0 becomes 2.4.0)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: echo "FRIXION_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: The Frixion key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ] && [ -n "$PASSWORD" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/frixion.jks"
+            echo "FRIXION_KEYSTORE=$RUNNER_TEMP/frixion.jks" >> "$GITHUB_ENV"
+            echo "FRIXION_KEYSTORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "::warning::The ANDROID_KEYSTORE and ANDROID_KEYSTORE_PASSWORD secrets aren't set, so this is a test build with a throwaway key."
+          fi
+      - name: Build the APK
+        working-directory: android
+        run: |
+          set -o pipefail
+          if [ -n "$FRIXION_KEYSTORE" ]; then task=assembleRelease; else task=assembleDebug; fi
+          gradle "$task" --no-daemon --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+      # What went wrong, as annotations on the run (readable without opening the log)
+      - name: Show the build errors
+        if: failure()
+        run: grep -E "error:|e: |What went wrong|Could not|FAILED|Exception:|not found" "$RUNNER_TEMP/gradle.log" | head -30 | while IFS= read -r line; do echo "::error::$line"; done
+      - name: Name it
+        run: |
+          apk=$(ls android/app/build/outputs/apk/*/*.apk | head -1)
+          mkdir -p out
+          cp "$apk" "out/Frixion-${FRIXION_VERSION:-test}.apk"
+          echo "APK=out/Frixion-${FRIXION_VERSION:-test}.apk" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frixion-android
+          path: out/*.apk
+      # The release is made on GitHub (Releases, Draft a new release) or by the computer build; it's waited for a while
+      # and only made here (as a draft, which the computer build then fills in) if it still isn't there.
+      - name: Add it to the release
+        if: startsWith(github.ref, 'refs/tags/') && env.FRIXION_KEYSTORE != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in $(seq 1 40); do gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && break; sleep 30; done
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "$FRIXION_VERSION" --notes ""
+          gh release upload "$GITHUB_REF_NAME" "$APK" --clobber

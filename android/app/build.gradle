@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The version comes from the release tag (v2.4.0 is 2.4.0, version code 2004000); a test build is "dev".
+def version = System.getenv('FRIXION_VERSION') ?: ''
+def parts = (version ==~ /\d+\.\d+\.\d+/) ? version.tokenize('.').collect { it as int } : [0, 0, 1]
+// The Frixion key, from the repo's secrets (see .github/workflows/android.yml). Without it, a test build is made instead.
+def keystore = System.getenv('FRIXION_KEYSTORE')
+
+android {
+    namespace 'com.frixion.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.frixion.app'
+        minSdk 24
+        // 34, not 35: Android 15 would draw the app under the status bar and the keyboard (edge to edge) for 35
+        targetSdk 34
+        versionCode parts[0] * 1000000 + parts[1] * 1000 + parts[2]
+        versionName version ?: 'dev'
+    }
+
+    signingConfigs {
+        frixion {
+            if (keystore) {
+                storeFile file(keystore)
+                storePassword System.getenv('FRIXION_KEYSTORE_PASSWORD')
+                keyAlias 'frixion'
+                keyPassword System.getenv('FRIXION_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystore) signingConfig signingConfigs.frixion
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

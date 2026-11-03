@@ -60,6 +60,19 @@ for example Minecraft or Roblox. A shortcut without Ctrl or Alt (like the defaul
 game from `games.json` is running, so it keeps typing normally everywhere else. Games in true fullscreen may minimize when the
 overlay opens; windowed or borderless fullscreen works best. (Needs app version 2.2 or newer.)
 
+## Android
+The `android` folder is Frixion for Android phones: the website full screen, with an app icon, Frixion links opening in
+the app, the back button, file picking, and notifications as phone notifications. It always opens
+`https://frixionbeta.pages.dev/` (`HOST` in `MainActivity.java`), so like the computer app, website changes need no new APK.
+- **Building:** `.github/workflows/android.yml` builds it on GitHub. A release tag (the same `v2.4.0` that builds the
+  computer installers) adds `Frixion-2.4.0.apk` to that release, and the website offers it on Android phones.
+- **Signing (once):** add two repository secrets (Settings, Secrets and variables, Actions): `ANDROID_KEYSTORE` (the key
+  file as base64) and `ANDROID_KEYSTORE_PASSWORD`. Android only installs an update over the app when both are signed with
+  the same key, so keep the key file and password somewhere safe and never change them. Without the secrets, builds are
+  test builds with a throwaway key and nothing is added to the release.
+- **Installing:** open the website on the phone, tap Download for Android, and allow installing from the browser when
+  Android asks.
+
 ## Files
 - `main.js`: the window, tray icon, start-with-computer, game scanning
 - `preload.js`: the small, safe bridge the website uses (`window.frixionDesktop`)
@@ -69,3 +82,4 @@ overlay opens; windowed or borderless fullscreen works best. (Needs app version 
 - `test/detector.test.js`: `npm test`
 - `build/`: app and tray icons
 - `.github/workflows/build.yml`: builds the installers on GitHub
+- `android/`: the Android app; `.github/workflows/android.yml` builds it

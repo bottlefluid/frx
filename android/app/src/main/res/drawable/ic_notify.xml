@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The same chat bubble, filling the notification icon -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+    <group android:translateX="-123" android:translateY="-132.5">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M166,170 H368 A16,16 0 0 1 384,186 V309 A16,16 0 0 1 368,325 H265 L208,383 V325 H166 A16,16 0 0 1 150,309 V186 A16,16 0 0 1 166,170 Z" />
+    </group>
+</vector>

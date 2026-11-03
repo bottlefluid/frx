@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The chat bubble from build/icon.png (512 across), centred in an adaptive icon's 108dp, where the middle 72dp shows -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="768"
+    android:viewportHeight="768">
+    <group android:translateX="128" android:translateY="128">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M166,170 H368 A16,16 0 0 1 384,186 V309 A16,16 0 0 1 368,325 H265 L208,383 V325 H166 A16,16 0 0 1 150,309 V186 A16,16 0 0 1 166,170 Z" />
+    </group>
+</vector>
