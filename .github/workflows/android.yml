@@ -39,7 +39,7 @@ jobs:
           echo "FRIXION_VERSION=${tag#v}" >> "$GITHUB_ENV"
       - name: The Frixion key
         env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE || secrets.ANDROID_KETSTORE }}   # (saved as ANDROID_KETSTORE on this repo; either name works)
           PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           # only whether they were saved as variables (the Variables tab) by mistake, never their values
           AS_VARIABLES: ${{ vars.ANDROID_KEYSTORE != '' && 'ANDROID_KEYSTORE ' || '' }}${{ vars.ANDROID_KEYSTORE_PASSWORD != '' && 'ANDROID_KEYSTORE_PASSWORD' || '' }}
