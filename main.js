@@ -1,11 +1,12 @@
 // Frixion for computers. A window around the Frixion website, a tray icon, start-with-computer, and the game detector
 // that powers Activity Status. The website does all the real work; this app only adds what a browser tab can't do.
 'use strict';
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, dialog, powerMonitor, globalShortcut, screen, Notification, net } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, dialog, powerMonitor, globalShortcut, screen, Notification, net, desktopCapturer, systemPreferences } = require('electron');
 const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const detector = require('./detector');
+const pickerHelper = require('./picker-sources');
 const config = require('./config.json');
 
 const SITE = new URL(config.url);
@@ -401,16 +402,89 @@ ipcMain.on('overlay:setShortcut', (e, b) => {
   updateOverlayShortcut();
 });
 
+// ---- Screenshare picker: lets the website's Share Screen button pick any monitor or window in Electron ----
+let picker = null, pickerFinish = null, pickerSources = new Map(), pickerReqId = 0;
+function closePicker(result) {
+  const done = pickerFinish;
+  pickerFinish = null;
+  pickerSources.clear();
+  if (done) { try { done(result || {}); } catch (e) {} }
+  const w = picker;
+  picker = null;
+  if (w && !w.isDestroyed()) w.close();
+}
+async function refreshPickerSources(reqId) {
+  const denied = process.platform === 'darwin'
+    && typeof systemPreferences.getMediaAccessStatus === 'function'
+    && systemPreferences.getMediaAccessStatus('screen') === 'denied';
+  let cards = [], byId = new Map();
+  if (!denied) {
+    try {
+      const raw = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 320, height: 180 },
+        fetchWindowIcons: true,
+      });
+      ({ cards, byId } = pickerHelper.serializeSources(raw));
+    } catch (e) { cards = []; byId = new Map(); }
+  }
+  if (reqId !== pickerReqId || !picker || picker.isDestroyed()) return;
+  pickerSources = byId;
+  picker.webContents.send('picker:sources', { sources: cards, denied, loading: false });
+}
+function openScreenPicker(callback) {
+  closePicker({});
+  const reqId = ++pickerReqId;
+  let settled = false;
+  pickerFinish = res => {
+    if (settled) return;
+    settled = true;
+    try { callback(res || {}); } catch (e) {}
+  };
+  const hasParent = !!(win && !win.isDestroyed() && win.isVisible());
+  picker = new BrowserWindow({
+    width: 700, height: 520, minWidth: 520, minHeight: 380, show: false, frame: false,
+    resizable: true, minimizable: false, maximizable: false,
+    modal: hasParent, parent: hasParent ? win : undefined,
+    backgroundColor: '#1e1f22', title: 'Share your screen', icon: iconPath('icon.png'),
+    webPreferences: { preload: path.join(__dirname, 'picker-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  picker.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  picker.webContents.on('will-navigate', e => e.preventDefault());
+  picker.on('closed', () => {
+    if (reqId === pickerReqId) closePicker({});
+  });
+  picker.webContents.on('did-finish-load', () => {
+    if (reqId !== pickerReqId || !picker || picker.isDestroyed()) return;
+    picker.show();
+    picker.focus();
+    refreshPickerSources(reqId);
+  });
+  picker.loadFile(path.join(__dirname, 'picker.html')).catch(() => closePicker({}));
+}
+const fromPicker = e => !!picker && !picker.isDestroyed() && e.sender === picker.webContents;
+ipcMain.on('picker:choose', (e, id) => {
+  if (!fromPicker(e)) return;
+  const src = pickerSources.get(String(id || ''));
+  closePicker(src ? { video: src } : {});
+});
+ipcMain.on('picker:cancel', e => { if (fromPicker(e)) closePicker({}); });
+ipcMain.on('picker:refresh', e => { if (fromPicker(e)) refreshPickerSources(pickerReqId); });
+
 app.on('second-instance', showWindow);
 app.on('will-quit', () => globalShortcut.unregisterAll());
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', () => { quitting = true; closePicker({}); });
 app.on('activate', showWindow);                       // clicking the Dock icon on a Mac
 app.on('window-all-closed', () => { if (quitting || !tray) app.quit(); });
 
 app.whenReady().then(() => {
   loadPrefs();
   // Only the permissions Frixion actually uses.
-  session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(['notifications', 'fullscreen', 'clipboard-sanitized-write', 'media'].includes(permission) && isSiteUrl(wc.getURL())));
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(['notifications', 'fullscreen', 'clipboard-sanitized-write', 'media', 'display-capture'].includes(permission) && isSiteUrl(wc.getURL())));
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    if (!pickerHelper.isAllowedDisplayRequest(request, isSiteUrl)) { callback({}); return; }
+    openScreenPicker(callback);
+  });
   const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden || !!prefs.startHiddenOnce;
   if (prefs.startHiddenOnce) { delete prefs.startHiddenOnce; savePrefs(); }
   buildTray();

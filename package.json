@@ -1,7 +1,7 @@
 {
   "name": "frixion-desktop",
   "productName": "Frixion",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Frixion for computers: the app window, tray icon and automatic game detection.",
   "main": "main.js",
   "author": "Frixion",
@@ -9,7 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/detector.test.js",
+    "test": "node test/detector.test.js && node test/picker.test.js",
     "dist": "electron-builder --publish never"
   },
   "devDependencies": {
@@ -32,6 +32,9 @@
       "offline.html",
       "notify.html",
       "notify-preload.js",
+      "picker.html",
+      "picker-preload.js",
+      "picker-sources.js",
       "build/**"
     ],
     "win": {
