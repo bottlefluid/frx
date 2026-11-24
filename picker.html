@@ -37,6 +37,13 @@
   }
   .tab:hover { color: #dbdee1; }
   .tab.on { color: #fff; border-bottom-color: #5865f2; }
+  .tab-search {
+    margin-left: auto; margin-bottom: 6px; width: 190px; height: 28px; padding: 0 10px;
+    border-radius: 6px; border: 1px solid rgba(255,255,255,.1); background: #1e1f22;
+    color: #f2f3f5; font: inherit; font-size: 12.5px; outline: none; user-select: text;
+  }
+  .tab-search:focus { border-color: #5865f2; }
+  .tab-search::placeholder { color: #6d6f78; }
   .body {
     flex: 1; overflow-y: auto; padding: 14px 16px; background: #2b2d31;
   }
@@ -108,8 +115,9 @@
     </div>
   </div>
   <div class="tabs" role="tablist">
-    <button type="button" class="tab on" id="tab-screen" role="tab" aria-selected="true">Screens</button>
-    <button type="button" class="tab" id="tab-window" role="tab" aria-selected="false">Windows</button>
+    <button type="button" class="tab on" id="tab-window" role="tab" aria-selected="true">Windows</button>
+    <button type="button" class="tab" id="tab-screen" role="tab" aria-selected="false">Entire Screens</button>
+    <input type="search" class="tab-search" id="search-box" placeholder="Search windows...">
   </div>
   <div class="body" id="body">
     <div class="empty"><strong>Loading screens and windows...</strong></div>
@@ -130,25 +138,30 @@
   const closeBtn = document.getElementById('close-btn');
   const refreshBtn = document.getElementById('refresh-btn');
 
+  const searchBox = document.getElementById('search-box');
+
   let state = { sources: [], denied: false, loading: true };
-  let activeTab = 'screen';
+  let activeTab = 'window';
   let selectedId = '';
+  let query = '';
 
   const isDataImg = u => typeof u === 'string' && /^data:image\/(png|jpe?g|webp);base64,/i.test(u);
 
   function filtered() {
-    return state.sources.filter(s => s.kind === activeTab);
+    const q = query.trim().toLowerCase();
+    return state.sources.filter(s => s.kind === activeTab && (!q || String(s.name || '').toLowerCase().includes(q)));
   }
 
   function render() {
     const screens = state.sources.filter(s => s.kind === 'screen');
     const windows = state.sources.filter(s => s.kind === 'window');
-    tabScreen.textContent = screens.length ? `Screens (${screens.length})` : 'Screens';
     tabWindow.textContent = windows.length ? `Windows (${windows.length})` : 'Windows';
-    tabScreen.classList.toggle('on', activeTab === 'screen');
+    tabScreen.textContent = screens.length ? `Entire Screens (${screens.length})` : 'Entire Screens';
     tabWindow.classList.toggle('on', activeTab === 'window');
-    tabScreen.setAttribute('aria-selected', String(activeTab === 'screen'));
+    tabScreen.classList.toggle('on', activeTab === 'screen');
     tabWindow.setAttribute('aria-selected', String(activeTab === 'window'));
+    tabScreen.setAttribute('aria-selected', String(activeTab === 'screen'));
+    searchBox.placeholder = activeTab === 'window' ? 'Search windows...' : 'Search screens...';
 
     body.textContent = '';
     if (state.loading) {
@@ -244,8 +257,9 @@
     body.append(grid);
   }
 
-  tabScreen.addEventListener('click', () => { activeTab = 'screen'; render(); });
   tabWindow.addEventListener('click', () => { activeTab = 'window'; render(); });
+  tabScreen.addEventListener('click', () => { activeTab = 'screen'; render(); });
+  searchBox.addEventListener('input', () => { query = searchBox.value; render(); });
   shareBtn.addEventListener('click', () => { if (selectedId) window.frxPicker.choose(selectedId); });
   cancelBtn.addEventListener('click', () => window.frxPicker.cancel());
   closeBtn.addEventListener('click', () => window.frxPicker.cancel());
@@ -266,8 +280,8 @@
         denied: !!data.denied,
         loading: !!data.loading,
       };
-      if (!state.loading && activeTab === 'screen' && !state.sources.some(s => s.kind === 'screen') && state.sources.some(s => s.kind === 'window')) {
-        activeTab = 'window';
+      if (!state.loading && activeTab === 'window' && !state.sources.some(s => s.kind === 'window') && state.sources.some(s => s.kind === 'screen')) {
+        activeTab = 'screen';
       }
       render();
     });
